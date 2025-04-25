@@ -2,7 +2,8 @@ package utils
 
 type ChanReq struct {
 	Variable interface{}
-	RetChan  chan interface{}
+	//接收响应的通道
+	RetChan chan interface{}
 }
 
 type ChanRet struct {
