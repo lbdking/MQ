@@ -1,8 +1,10 @@
 package message
 
 type Message struct {
-	data []byte
 	//定义消息,前十六位为uid，标识唯一消息，后面内容为消息本身
+	data []byte
+	//用于终止计时逻辑
+	timeChan chan struct{}
 }
 
 func NewMessage(data []byte) *Message {
@@ -19,4 +21,11 @@ func (m *Message) Body() []byte {
 
 func (m *Message) Data() []byte {
 	return m.data
+}
+
+func (m *Message) EndTime() {
+	select {
+	case m.timeChan <- struct{}{}:
+	default:
+	}
 }

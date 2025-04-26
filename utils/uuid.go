@@ -22,3 +22,7 @@ func uuid() []byte {
 	}
 	return b
 }
+
+func UuidToString(Uuid []byte) string {
+	return string(Uuid)
+}

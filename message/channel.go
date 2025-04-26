@@ -2,7 +2,9 @@ package message
 
 import (
 	"MQ/utils"
+	"errors"
 	"log"
+	"time"
 )
 
 //TODO
@@ -31,6 +33,15 @@ type Channel struct {
 
 	//接收关闭信号的该管道，接收到信息之后关闭转发消息以及消费者的连接
 	exitChan chan utils.ChanReq
+
+	//读取写入存储已经发送的消息
+	inFlightMessageChan chan *Message
+	//用来存储已发送的消息
+	inFlightMessages map[string]*Message
+
+	finishMessageChan chan utils.ChanReq
+
+	requeueMessageChan chan utils.ChanReq
 }
 
 // AddClient 使用无缓冲的channel将client传递给服务端。
@@ -57,9 +68,12 @@ func (c *Channel) RemoveClient(client Consumer) {
 
 func (c *Channel) Router() {
 	var clientReq utils.ChanReq
+	var closeChan chan struct{}
 
 	//实时转发消息
-	go c.MessagePump()
+	go c.MessagePump(closeChan)
+
+	go c.RequeueRouter(closeChan)
 
 	for {
 		select {
@@ -93,7 +107,7 @@ func (c *Channel) Router() {
 			//将消息生产者的消息存储到channel的缓存区channel中，default超出缓冲区会丢失消息
 			select {
 			case c.msgChan <- msg:
-				log.Printf("Channel:%s Receive Message:%s\n", c.name, msg)
+				log.Printf("Channel:%s Receive Message:%v\n", c.name, msg)
 			default:
 			}
 		}
@@ -111,12 +125,16 @@ func (c *Channel) PullMessage() *Message {
 }
 
 // MessagePump 消息转发，将消息转发给客户端
-func (c *Channel) MessagePump() {
+func (c *Channel) MessagePump(closeChan chan struct{}) {
 	var msg *Message
 
 	for {
 		select {
 		case msg = <-c.msgChan:
+		}
+		c.clientMessageChan <- msg
+		if msg != nil {
+			c.inFlightMessageChan <- msg
 		}
 		c.clientMessageChan <- msg
 	}
@@ -130,4 +148,81 @@ func (c *Channel) Close() error {
 
 	err := (<-errChan).(error)
 	return err
+}
+
+func (c *Channel) pushInFlightMessage(msg *Message) {
+	c.inFlightMessages[utils.UuidToString(msg.Uuid())] = msg
+}
+
+func (c *Channel) popInFlightMessageChan(uuid string) (*Message, error) {
+	msg, ok := c.inFlightMessages[uuid]
+	if ok {
+		return nil, errors.New("UUID not Find")
+	}
+	delete(c.inFlightMessages, uuid)
+	return msg, nil
+}
+
+func (c *Channel) FinishMessage(uuid string) error {
+	errChan := make(chan interface{})
+	c.finishMessageChan <- utils.ChanReq{
+		Variable: uuid,
+		RetChan:  errChan,
+	}
+	err, _ := (<-errChan).(error)
+	return err
+}
+
+func (c *Channel) RequeueMessage(uuid string) error {
+	errChan := make(chan interface{})
+	c.requeueMessageChan <- utils.ChanReq{
+		Variable: uuid,
+		RetChan:  errChan,
+	}
+	err, _ := (<-errChan).(error)
+	return err
+}
+
+func (c *Channel) RequeueRouter(closeChan chan struct{}) {
+	for {
+		select {
+		case msg := <-c.inFlightMessageChan:
+			go func(msg *Message) {
+				select {
+				//一分钟之内如果没有消费者消费,重新将消息入队
+				case <-time.After(1 * time.Second):
+					log.Printf("Channel(%s): requeue message(%v)\n", c.name, msg)
+				case <-msg.timeChan:
+					return
+				}
+				err := c.RequeueMessage(utils.UuidToString(msg.Uuid()))
+				if err != nil {
+					log.Printf("Channel(%s): requeue message(%v) Error\n", c.name, msg)
+				}
+			}(msg)
+			c.pushInFlightMessage(msg)
+		case <-closeChan:
+			return
+		//检测到重入队列的信号就把消息读取进来，然后循环写入incomingMessageChan
+		case requeueReq := <-c.requeueMessageChan:
+			uuid := requeueReq.Variable.(string)
+			msg, err := c.popInFlightMessageChan(uuid)
+			if err != nil {
+				log.Printf("Channel(%s):RequeueMessage:%s\n", c.name, uuid)
+			} else {
+				go func(msg *Message) {
+					c.PutMessage(msg)
+				}(msg)
+			}
+		case finishReq := <-c.finishMessageChan:
+			uuid := finishReq.Variable.(string)
+			_, err := c.popInFlightMessageChan(uuid)
+			if err != nil {
+				log.Printf("Error: Failed to finish menssage:uuid:%s----%s", uuid, err)
+			}
+			finishReq.RetChan <- err
+		case <-closeChan:
+			return
+		}
+	}
 }
