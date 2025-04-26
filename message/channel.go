@@ -39,9 +39,30 @@ type Channel struct {
 	//用来存储已发送的消息
 	inFlightMessages map[string]*Message
 
+	//接收完成消息处理的请求
 	finishMessageChan chan utils.ChanReq
 
+	//接收消息重新入队的请求
 	requeueMessageChan chan utils.ChanReq
+}
+
+func NewChannel(name string, inMeSize int) *Channel {
+	channel := &Channel{
+		name:                name,
+		addChannel:          make(chan utils.ChanReq),
+		removeChannel:       make(chan utils.ChanReq),
+		clients:             make([]Consumer, inMeSize, 5),
+		incomingMessageChan: make(chan *Message, 5),
+		msgChan:             make(chan *Message, inMeSize),
+		clientMessageChan:   make(chan *Message),
+		exitChan:            make(chan utils.ChanReq),
+		inFlightMessageChan: make(chan *Message),
+		inFlightMessages:    make(map[string]*Message),
+		finishMessageChan:   make(chan utils.ChanReq),
+		requeueMessageChan:  make(chan utils.ChanReq),
+	}
+	go channel.Router()
+	return channel
 }
 
 // AddClient 使用无缓冲的channel将client传递给服务端。
@@ -163,6 +184,7 @@ func (c *Channel) popInFlightMessageChan(uuid string) (*Message, error) {
 	return msg, nil
 }
 
+// FinishMessage 标记指定消息的已经完成处理，并接收错误信息
 func (c *Channel) FinishMessage(uuid string) error {
 	errChan := make(chan interface{})
 	c.finishMessageChan <- utils.ChanReq{
@@ -173,6 +195,7 @@ func (c *Channel) FinishMessage(uuid string) error {
 	return err
 }
 
+// RequeueMessage 重新入队请求，同上一样接收错误信息
 func (c *Channel) RequeueMessage(uuid string) error {
 	errChan := make(chan interface{})
 	c.requeueMessageChan <- utils.ChanReq{
