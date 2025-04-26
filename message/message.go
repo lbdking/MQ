@@ -1,5 +1,7 @@
 package message
 
+import "MQ/utils"
+
 type Message struct {
 	//定义消息,前十六位为uid，标识唯一消息，后面内容为消息本身
 	data []byte
@@ -8,7 +10,9 @@ type Message struct {
 }
 
 func NewMessage(data []byte) *Message {
-	return &Message{data: data}
+	uuid := <-utils.UuidChan
+	uuid = append(uuid, data...)
+	return &Message{data: uuid}
 }
 
 func (m *Message) Uuid() []byte {

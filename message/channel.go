@@ -51,7 +51,7 @@ func NewChannel(name string, inMeSize int) *Channel {
 		name:                name,
 		addChannel:          make(chan utils.ChanReq),
 		removeChannel:       make(chan utils.ChanReq),
-		clients:             make([]Consumer, inMeSize, 5),
+		clients:             make([]Consumer, 0, 5),
 		incomingMessageChan: make(chan *Message, 5),
 		msgChan:             make(chan *Message, inMeSize),
 		clientMessageChan:   make(chan *Message),
@@ -152,12 +152,15 @@ func (c *Channel) MessagePump(closeChan chan struct{}) {
 	for {
 		select {
 		case msg = <-c.msgChan:
+		case <-closeChan:
+			return
 		}
 		c.clientMessageChan <- msg
 		if msg != nil {
 			c.inFlightMessageChan <- msg
 		}
 		c.clientMessageChan <- msg
+
 	}
 }
 

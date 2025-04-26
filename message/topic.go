@@ -86,7 +86,7 @@ func (t Topic) Router(inMemSize int) {
 			channelName := channelReq.Variable.(string)
 			channel, ok := t.channelMap[channelName]
 			if !ok {
-				channel := NewChannel(channelName, inMemSize)
+				channel = NewChannel(channelName, inMemSize)
 				t.channelMap[channelName] = channel
 				log.Printf("Topic(%s)new a Channel %s\n", t.name, channelName)
 			}
