@@ -40,7 +40,6 @@ func (r *Raft) TickElection() {
 	  - follower变为canidate
 	  - canidate重新进行选举*/
 	r.electtionTick++
-
 	//时钟大于随机选举周期，时钟置0,然后根据当前节点身份执行不同方法
 	if r.electtionTick > r.randomElectionTimeout {
 		r.electionTimeout = 0
@@ -108,4 +107,30 @@ func (r *Raft) BroadcastRequestVote() {
 // 将数据添加到消息切片
 func (r *Raft) send(msg *pb.RaftMessage) {
 	r.Msg = append(r.Msg, msg)
+}
+
+// follower,canidate处理投票请求
+func (r *Raft) ReciveRequestVote(mTerm, mCandidateId, nLAstLogTerm, mLastLogIndex uint64) (success bool) {
+	/*
+	 -当前任期未投票，请求方的最新日志大于自身，则同意
+	 -当前任期已投票，或者请求方最新日志小于自身，则拒绝
+	*/
+	lastLogIndex, lastLogTerm := r.raftlog.GetLastLogIndexAndTerm()
+	if r.voteFor == 0 || r.voteFor == mCandidateId {
+		if mTerm >= r.currentTerm && mLastLogIndex >= lastLogIndex {
+			r.voteFor = mCandidateId
+			success = true
+		}
+	}
+	r.logger.Debugf("候选人: %s, 投票: %t ", strconv.FormatUint(mCandidateId, 16), success)
+	r.send(&pb.RaftMessage{
+		Type:         pb.MessageType_VOTE_RESP,
+		Term:         mTerm,
+		From:         r.id,
+		To:           mCandidateId,
+		LastLogIndex: lastLogIndex,
+		LastLogTerm:  lastLogTerm,
+		Success:      success,
+	})
+	return
 }
