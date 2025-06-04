@@ -52,3 +52,29 @@ func (c *Cluster) Foreach(f func(id uint64, p *ReplicaProgress)) {
 		f(id, p)
 	}
 }
+
+func (c *Cluster) ResetLogIndex(from, lastLogIndex, leadLastLogIndex uint64) {
+
+}
+
+func (c *Cluster) CheckVoteResult() VoteResult {
+	granted, lost := 0, 0
+	for _, v := range c.voteResp {
+		if v {
+			granted++
+		} else {
+			lost++
+		}
+	}
+	if granted >= len(c.incoming)/2+1 {
+		return VoteWon
+	} else if lost > len(c.incoming)/2 {
+		return VoteLost
+	} else {
+		return Voting
+	}
+}
+
+func (c *Cluster) Reset() {
+
+}
