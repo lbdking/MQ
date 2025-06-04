@@ -21,7 +21,7 @@ type Raft struct {
 	leader                uint64                //leader节点id
 	currentTerm           uint64                //当前任期
 	voteFor               uint64                //投票对象
-	raftlog               *RaftLog              //日志
+	raftLog               *RaftLog              //日志
 	cluster               *Cluster              //集群节点
 	electionTimeout       int                   //选举周期
 	heartbeatTimeout      int                   //心跳周期
@@ -30,8 +30,26 @@ type Raft struct {
 	Tick                  func()                //时钟函数，Leader为心跳时钟，其余节点为选举时钟
 	handleMessage         func(*pb.RaftMessage) //消息处理函数
 	Msg                   []*pb.RaftMessage     //消息队列
-	//ReadIndex             []*ReadIndexResp      //检查Leader完成的readindex
-	logger *zap.SugaredLogger
+	ReadIndex             []*ReadIndexResp      //检查Leader完成的readIndex
+	logger                *zap.SugaredLogger
+}
+
+func NewRaft(id uint64, peers map[uint64]string, logger *zap.SugaredLogger) *Raft {
+	raftlog := NewRaftLog(logger)
+	raft := &Raft{
+		id:          id,
+		currentTerm: raftlog.lastAppliedTerm,
+		raftLog:     raftlog,
+		//todo
+		//cluster:          NewCluster(peers, raftlog.commitIndex, logger),
+		electionTimeout:  10,
+		heartbeatTimeout: 5,
+		logger:           logger,
+	}
+	logger.Infof("节点 %s 启动,任期 %d", strconv.FormatUint(raft.id, 16), raft.currentTerm)
+	raft.SwitchFollower(0, raft.currentTerm)
+
+	return raft
 }
 
 func (r *Raft) TickElection() {
@@ -74,8 +92,25 @@ func (r *Raft) SwitchCandidate() {
 	r.logger.Debugf("候选者，任期 %d , 选举周期 %d s", r.currentTerm, r.randomElectionTimeout)
 }
 
-func (r *Raft) handleCandidateMessage(message *pb.RaftMessage) {
-	//TOdo
+func (r *Raft) handleCandidateMessage(msg *pb.RaftMessage) {
+	r.logger.Debugf("节点 %s 收到消息:(%s)", strconv.FormatUint(r.id, 16), msg)
+	switch msg.Type {
+	case pb.MessageType_VOTE:
+		grant := r.ReciveRequestVote(msg.Term, msg.From, msg.LastLogTerm, msg.LastLogIndex)
+		if grant {
+			//投票后重置选举时钟
+			r.electtionTick = 0
+		}
+	case pb.MessageType_VOTE_RESP:
+		r.ReciveVoteResp(msg.From, msg.Term, msg.LastLogIndex, msg.LastLogTerm, msg.Success)
+	case pb.MessageType_HEARTBEAT:
+		r.ReciveHeartbeat(msg.From, msg.Term, msg.LastLogIndex, msg.LastCommit, msg.Context)
+	case pb.MessageType_APPEND_ENTRY:
+		r.SwitchFollower(msg.From, msg.Term)
+		r.ReciveAppendEntries(msg.From, msg.Term, msg.LastLogTerm, msg.LastLogIndex, msg.LastCommit, msg.Entry)
+	default:
+		r.logger.Debugf("收到 %s 异常消息 %s 任期 %d", strconv.FormatUint(msg.From, 16), msg.Type, msg.Term)
+	}
 	return
 }
 
@@ -92,7 +127,7 @@ func (r *Raft) BroadcastRequestVote() {
 		if id == r.id {
 			return
 		}
-		lastLogIndex, lastLogTerm := r.raftlog.GetLastLogIndexAndTerm()
+		lastLogIndex, lastLogTerm := r.raftLog.GetLastLogIndexAndTerm()
 		r.send(&pb.RaftMessage{
 			Type:         pb.MessageType_VOTE,
 			Term:         r.currentTerm,
@@ -115,7 +150,7 @@ func (r *Raft) ReciveRequestVote(mTerm, mCandidateId, nLAstLogTerm, mLastLogInde
 	 -当前任期未投票，请求方的最新日志大于自身，则同意
 	 -当前任期已投票，或者请求方最新日志小于自身，则拒绝
 	*/
-	lastLogIndex, lastLogTerm := r.raftlog.GetLastLogIndexAndTerm()
+	lastLogIndex, lastLogTerm := r.raftLog.GetLastLogIndexAndTerm()
 	if r.voteFor == 0 || r.voteFor == mCandidateId {
 		if mTerm >= r.currentTerm && mLastLogIndex >= lastLogIndex {
 			r.voteFor = mCandidateId
@@ -136,7 +171,7 @@ func (r *Raft) ReciveRequestVote(mTerm, mCandidateId, nLAstLogTerm, mLastLogInde
 }
 
 func (r *Raft) ReciveVoteResp(from, term, lastLogIndex, lastLogTerm uint64, success bool) {
-	leadLastLogIndex, _ := r.raftlog.GetLastLogIndexAndTerm()
+	leadLastLogIndex, _ := r.raftLog.GetLastLogIndexAndTerm()
 	r.cluster.Vote(from, success)
 	r.cluster.ResetLogIndex(from, lastLogIndex, leadLastLogIndex)
 
@@ -242,7 +277,6 @@ func (r *Raft) HandleFollowerMessage(msg *pb.RaftMessage) {
 func (r *Raft) HandleCandiateMessage(msg *pb.RaftMessage) {
 	switch msg.Type {
 	case pb.MessageType_VOTE:
-
 		grant := r.ReciveRequestVote(msg.Term, msg.From, msg.LastLogTerm, msg.LastLogIndex)
 		if grant {
 			r.electtionTick = 0
@@ -262,8 +296,8 @@ func (r *Raft) HandleCandiateMessage(msg *pb.RaftMessage) {
 	}
 }
 func (r *Raft) ReciveHeartbeat(mFrom, mTerm, mLastLogIndex, mLastCommit uint64, context []byte) {
-	lastLogIndex, _ := r.raftlog.GetLastLogIndexAndTerm()
-	r.raftlog.Apply(mLastCommit, lastLogIndex)
+	lastLogIndex, _ := r.raftLog.GetLastLogIndexAndTerm()
+	r.raftLog.Apply(mLastCommit, lastLogIndex)
 
 	r.send(&pb.RaftMessage{
 		Type:    pb.MessageType_HEARTBEAT_RESP,

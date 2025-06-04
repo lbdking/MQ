@@ -13,18 +13,18 @@ service Raft {
 
 */
 enum MessageType {
-    VOTE = 0;
-    VOTE_RESP = 1;
-    HEARTBEAT = 2;
-    HEARTBEAT_RESP = 3;
-    APPEND_ENTRY = 4;
-    APPEND_ENTRY_RESP = 5;
-    PROPOSE = 6;
-    PROPOSE_RESP = 7;
-    INSTALL_SNAPSHOT = 8;
-    INSTALL_SNAPSHOT_RESP = 9;
-    READINDEX = 10;
-    READINDEX_RESP = 11;
+    VOTE = 0; //请求投票
+    VOTE_RESP = 1; //投票结果响应
+    HEARTBEAT = 2; //心跳消息
+    HEARTBEAT_RESP = 3; //心跳响应消息
+    APPEND_ENTRY = 4; //日志条目
+    APPEND_ENTRY_RESP = 5; //日志条目响应消息
+    PROPOSE = 6; //客户端向leader提案消息
+    PROPOSE_RESP = 7; //提案结果响应消息
+    INSTALL_SNAPSHOT = 8; //快照消息
+    INSTALL_SNAPSHOT_RESP = 9; //快照响应消息
+    READINDEX = 10; //读索引消息
+    READINDEX_RESP = 11; //读索引响应消息
 }
 
 message LogEntry {
