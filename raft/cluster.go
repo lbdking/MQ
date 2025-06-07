@@ -30,6 +30,27 @@ type Cluster struct {
 	logger             *zap.SugaredLogger
 }
 
+func NewCluster(peers map[uint64]string, lastIndex uint64, logger *zap.SugaredLogger) *Cluster {
+
+	incoming := make(map[uint64]struct{})
+	progress := make(map[uint64]*ReplicaProgress)
+	for id := range peers {
+		progress[id] = &ReplicaProgress{
+			NextIndex:  lastIndex + 1,
+			MatchIndex: lastIndex,
+		}
+		incoming[id] = struct{}{}
+	}
+	return &Cluster{
+		incoming:         incoming,
+		outcoming:        make(map[uint64]struct{}),
+		voteResp:         make(map[uint64]bool),
+		progress:         progress,
+		pendingReadIndex: make(map[string]*ReadIndexResp),
+		logger:           logger,
+	}
+}
+
 func (c *Cluster) AddReadIndex(from, index uint64, req []byte) {
 	c.pendingReadIndex[string(req)] = &ReadIndexResp{
 		Req:   req,

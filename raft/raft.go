@@ -27,6 +27,7 @@ type Raft struct {
 	heartbeatTimeout      int                   //心跳周期
 	randomElectionTimeout int                   //随机选举周期
 	electtionTick         int                   //选举计时器
+	hearbeatTick          int                   //心跳时钟
 	Tick                  func()                //时钟函数，Leader为心跳时钟，其余节点为选举时钟
 	handleMessage         func(*pb.RaftMessage) //消息处理函数
 	Msg                   []*pb.RaftMessage     //消息队列
@@ -41,7 +42,7 @@ func NewRaft(id uint64, peers map[uint64]string, logger *zap.SugaredLogger) *Raf
 		currentTerm: raftlog.lastAppliedTerm,
 		raftLog:     raftlog,
 		//todo
-		//cluster:          NewCluster(peers, raftlog.commitIndex, logger),
+		cluster:          NewCluster(peers, raftlog.commitIndex, logger),
 		electionTimeout:  10,
 		heartbeatTimeout: 5,
 		logger:           logger,
@@ -218,7 +219,26 @@ func (r *Raft) BroadcastAppendEntries() {
 }
 
 func (r *Raft) TickHeartbeat() {
+	r.hearbeatTick++
 
+	lastIndex, _ := r.raftLog.GetLastLogIndexAndTerm()
+
+	if r.hearbeatTick >= r.heartbeatTimeout {
+		r.hearbeatTick = 0
+		r.BroadcastHeartbeat(nil)
+		r.cluster.Foreach(func(id uint64, p *ReplicaProgress) {
+			if id == r.id {
+				return
+			}
+
+			pendding := len(p.pending)
+
+			if !p.prevResp && pendding >= 0 && p.MaybeLogLost(p.pending[0]) || (pendding == 0 && p.NextIndex <= lastIndex) {
+				p.pending = nil
+				r.SendAppendEntries(id)
+			}
+		})
+	}
 }
 
 // HandleMessage 消息处理
@@ -314,4 +334,32 @@ func (r *Raft) ReciveAppendEntries(mLeader, mTerm, mLastLogTerm, mLastLogIndex, 
 
 func (r *Raft) AppendEntry(entry []*pb.LogEntry) {
 
+}
+
+func (r *Raft) BroadcastHeartbeat(context []byte) {
+	r.cluster.Foreach(func(id uint64, p *ReplicaProgress) {
+		if id == r.id {
+			return
+		}
+		lastLogIndex := p.NextIndex - 1
+		lastLogTerm := r.raftLog.GetTerm(lastLogIndex)
+		r.send(&pb.RaftMessage{
+			Type:        pb.MessageType_HEARTBEAT,
+			Term:        r.currentTerm,
+			From:        r.id,
+			To:          id,
+			Context:     context,
+			LastLogTerm: lastLogTerm,
+			LastCommit:  r.raftLog.commitIndex,
+		})
+	})
+}
+
+func (r *Raft) SendAppendEntries(id uint64) {
+
+}
+
+// todo
+func (r RaftLog) GetTerm(lastLogIndex uint64) uint64 {
+	return 0
 }

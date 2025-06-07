@@ -28,10 +28,16 @@ func NewRaftLog(logger *zap.SugaredLogger) *RaftLog {
 	return nil
 }
 
-// todo
-func (l *RaftLog) GetLastLogIndexAndTerm() (uint64, uint64) {
-	//todo
-	return 0, 0
+func (l *RaftLog) GetLastLogIndexAndTerm() (lastLogIndex, lastLogTerm uint64) {
+	if len(l.logEnties) > 0 {
+		lastLog := l.logEnties[len(l.logEnties)-1]
+		lastLogIndex = lastLog.Index
+		lastLogTerm = lastLog.Term
+	} else {
+		lastLogIndex = l.lastAppliedIndex
+		lastLogTerm = l.lastAppliedTerm
+	}
+	return
 }
 
 // todo
