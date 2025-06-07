@@ -1,5 +1,7 @@
 package raft
 
+import "MQ/pb"
+
 type ReplicaProgress struct {
 	MatchIndex         uint64            // 已接收日志
 	NextIndex          uint64            // 下次发送日志
@@ -10,4 +12,9 @@ type ReplicaProgress struct {
 	snapc              chan *pb.Snapshot // 快照读取通道
 	prevSnap           *pb.Snapshot      // 上次发送快照
 	maybePrevSnapLost  *pb.Snapshot      // 可能丢失快照,标记上次发送未完成以重发
+}
+
+// todo
+func (p ReplicaProgress) MaybeLogLost(u uint64) bool {
+	return false
 }
