@@ -7,6 +7,8 @@ import (
 	"strconv"
 )
 
+const MAX_LOG_ENTRY_SEND = 1000
+
 type RaftState int
 
 const (
@@ -35,8 +37,8 @@ type Raft struct {
 	logger                *zap.SugaredLogger
 }
 
-func NewRaft(id uint64, peers map[uint64]string, logger *zap.SugaredLogger) *Raft {
-	raftlog := NewRaftLog(logger)
+func NewRaft(id uint64, storage Storage, peers map[uint64]string, logger *zap.SugaredLogger) *Raft {
+	raftlog := NewRaftLog(storage, logger)
 	raft := &Raft{
 		id:          id,
 		currentTerm: raftlog.lastAppliedTerm,
@@ -215,7 +217,12 @@ func (r *Raft) HandleLeaderMessage(msg *pb.RaftMessage) {
 }
 
 func (r *Raft) BroadcastAppendEntries() {
-
+	r.cluster.Foreach(func(id uint64, _ *ReplicaProgress) {
+		if id == r.id {
+			return
+		}
+		r.SendAppendEntries(id)
+	})
 }
 
 func (r *Raft) TickHeartbeat() {
@@ -329,11 +336,25 @@ func (r *Raft) ReciveHeartbeat(mFrom, mTerm, mLastLogIndex, mLastCommit uint64, 
 }
 
 func (r *Raft) ReciveAppendEntries(mLeader, mTerm, mLastLogTerm, mLastLogIndex, mLastCommit uint64, mEntries []*pb.LogEntry) {
-	//todo
-}
-
-func (r *Raft) AppendEntry(entry []*pb.LogEntry) {
-
+	var accept bool
+	if !r.raftLog.HasPrevLog(mLastLogIndex, mLastLogTerm) {
+		r.logger.Infof("节点缺少上次追加日志： Index : %d ,Term: %d", mLastLogIndex, mLastLogTerm)
+		accept = false
+	} else {
+		r.raftLog.Append(mEntries)
+		accept = true
+	}
+	lastLogIndex, lastLogTerm := r.raftLog.GetLastLogIndexAndTerm()
+	r.raftLog.Apply(mLastCommit, lastLogIndex)
+	r.send(&pb.RaftMessage{
+		Type:         pb.MessageType_APPEND_ENTRY_RESP,
+		Term:         r.currentTerm,
+		From:         r.id,
+		To:           mLeader,
+		LastLogIndex: lastLogIndex,
+		LastLogTerm:  lastLogTerm,
+		Success:      accept,
+	})
 }
 
 func (r *Raft) BroadcastHeartbeat(context []byte) {
@@ -355,11 +376,69 @@ func (r *Raft) BroadcastHeartbeat(context []byte) {
 	})
 }
 
-func (r *Raft) SendAppendEntries(id uint64) {
+func (r *Raft) SendAppendEntries(to uint64) {
+	p := r.cluster.progress[to]
+	if p == nil || p.IsPause() {
+		return
+	}
 
+	nextIndex := r.cluster.GetNextIndex(to)
+	latsLogIndex := nextIndex - 1
+	lastLogTerm := r.raftLog.GetTerm(latsLogIndex)
+	maxSize := MAX_LOG_ENTRY_SEND
+
+	if !p.prevResp {
+		maxSize = 1
+	}
+	entries := r.raftLog.GetEntries(nextIndex, maxSize)
+	size := len(entries)
+	if size > 0 {
+		r.cluster.AppendEntry(to, entries[size-1].Index)
+	}
+	r.send(&pb.RaftMessage{
+		Type:         pb.MessageType_APPEND_ENTRY,
+		Term:         r.currentTerm,
+		From:         r.id,
+		To:           to,
+		LastLogIndex: latsLogIndex,
+		LastLogTerm:  lastLogTerm,
+		LastCommit:   r.raftLog.commitIndex,
+		Entry:        entries,
+	})
 }
 
-// todo
-func (r RaftLog) GetTerm(lastLogIndex uint64) uint64 {
-	return 0
+func (r *Raft) AppendEntry(entries []*pb.LogEntry) {
+	lastLogIndex, _ := r.raftLog.GetLastLogIndexAndTerm()
+	for i, entry := range entries {
+		entry.Index = lastLogIndex + uint64(i) + 1
+		entry.Term = r.currentTerm
+	}
+	r.raftLog.Append(entries)
+	r.cluster.UpdateLogIndex(r.id, entries[len(entries)-1].Index)
+
+	r.BroadcastAppendEntries()
+}
+
+func (r *Raft) ReciveAppendEntriesResult(from, term, lastLogIndex uint64, success bool) {
+	leaderLastLogIndex, _ := r.raftLog.GetLastLogIndexAndTerm()
+	if success {
+		r.cluster.AppendEntry(from, lastLogIndex)
+		if lastLogIndex > r.raftLog.commitIndex {
+			if r.cluster.CheckCommit(lastLogIndex) {
+				//todo
+				//prevApplied := r.raftLog.lastAppliedIndex
+				r.raftLog.Apply(lastLogIndex, lastLogIndex)
+				r.BroadcastAppendEntries()
+			}
+		} else if len(r.raftLog.waitQueue) > 0 {
+			r.raftLog.NotifyReadIndex()
+		}
+		if r.cluster.GetNextIndex(from) <= leaderLastLogIndex {
+			r.SendAppendEntries(from)
+		}
+	} else {
+		r.logger.Infof("节点 %s 追加日志失败，leader记录最新日志索引为 %d ,节点最新日志索引为 %d", strconv.FormatUint(from, 16), r.cluster.GetNextIndex(from)-1, lastLogIndex)
+		r.cluster.ResetLogIndex(from, lastLogIndex, leaderLastLogIndex)
+		r.SendAppendEntries(from)
+	}
 }

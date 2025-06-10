@@ -17,9 +17,9 @@ type RaftNode struct {
 	logger *zap.SugaredLogger
 }
 
-func NewRaftNode(id uint64, peers map[uint64]string, logger *zap.SugaredLogger) *RaftNode {
+func NewRaftNode(id uint64, storage Storage, peers map[uint64]string, logger *zap.SugaredLogger) *RaftNode {
 	node := &RaftNode{
-		raft:   NewRaft(id, peers, logger),
+		raft:   NewRaft(id, storage, peers, logger),
 		recvc:  make(chan *pb.RaftMessage),
 		propc:  make(chan *pb.RaftMessage),
 		sendc:  make(chan []*pb.RaftMessage),
@@ -27,6 +27,7 @@ func NewRaftNode(id uint64, peers map[uint64]string, logger *zap.SugaredLogger) 
 		ticker: time.NewTicker(time.Second),
 		logger: logger,
 	}
+
 	node.Start()
 	return node
 }

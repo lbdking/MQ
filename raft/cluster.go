@@ -99,3 +99,34 @@ func (c *Cluster) CheckVoteResult() VoteResult {
 func (c *Cluster) Reset() {
 
 }
+
+// GetNextIndex
+// todo
+func (c *Cluster) GetNextIndex(id uint64) uint64 {
+	p := c.progress[id]
+	if p != nil {
+		return p.NextIndex
+	}
+	return 0
+}
+
+// AppendEntry
+// todo
+func (c *Cluster) AppendEntry(id uint64, lastIndex uint64) {
+	p := c.progress[id]
+	if p != nil {
+		p.AppendEntry(lastIndex)
+	}
+}
+
+// UpdateLogIndex
+// todo
+func (c *Cluster) UpdateLogIndex(id uint64, index uint64) {
+
+}
+
+// CheckCommit 检查集群是否可以提交日志
+// todo
+func (c *Cluster) CheckCommit(index uint64) bool {
+	return false
+}

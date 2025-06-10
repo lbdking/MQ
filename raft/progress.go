@@ -14,7 +14,21 @@ type ReplicaProgress struct {
 	maybePrevSnapLost  *pb.Snapshot      // 可能丢失快照,标记上次发送未完成以重发
 }
 
+func (rp *ReplicaProgress) MaybeLogLost(u uint64) bool {
+	return (!rp.prevResp && len(rp.pending) > 0)
+}
+
+// IsPause
 // todo
-func (p ReplicaProgress) MaybeLogLost(u uint64) bool {
+func (rp *ReplicaProgress) IsPause() bool {
 	return false
+}
+
+// AppendEntry
+// todo
+func (rp *ReplicaProgress) AppendEntry(lastIndex uint64) {
+	rp.pending = append(rp.pending, lastIndex)
+	if rp.prevResp {
+		rp.NextIndex = lastIndex + 1
+	}
 }
