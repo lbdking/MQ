@@ -74,10 +74,6 @@ func (c *Cluster) Foreach(f func(id uint64, p *ReplicaProgress)) {
 	}
 }
 
-func (c *Cluster) ResetLogIndex(from, lastLogIndex, leadLastLogIndex uint64) {
-
-}
-
 func (c *Cluster) CheckVoteResult() VoteResult {
 	granted, lost := 0, 0
 	for _, v := range c.voteResp {
@@ -126,7 +122,26 @@ func (c *Cluster) UpdateLogIndex(id uint64, index uint64) {
 }
 
 // CheckCommit 检查集群是否可以提交日志
-// todo
 func (c *Cluster) CheckCommit(index uint64) bool {
-	return false
+	incomingLogged := 0
+	for id := range c.progress {
+		if index <= c.progress[id].MatchIndex {
+			incomingLogged++
+		}
+	}
+	incomingCommit := incomingLogged > len(c.incoming)/2+1
+	return incomingCommit
+}
+
+func (c *Cluster) AppendEntryResp(id, lastIndex uint64) {
+	p := c.progress[id]
+	if p != nil {
+		p.AppendEntry(lastIndex)
+	}
+}
+func (c *Cluster) ResetLogIndex(id, lastIndex, leaderLastIndex uint64) {
+	p := c.progress[id]
+	if p != nil {
+		p.ResetLogIndex(lastIndex, leaderLastIndex)
+	}
 }

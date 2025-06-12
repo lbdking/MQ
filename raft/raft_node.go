@@ -77,6 +77,14 @@ func (n *RaftNode) Process(ctx context.Context, msg *pb.RaftMessage) error {
 		return ctx.Err()
 	}
 }
+func (n *RaftNode) Propose(ctx context.Context, entries []*pb.LogEntry) error {
+	msg := &pb.RaftMessage{
+		Type:  pb.MessageType_PROPOSE,
+		Entry: entries,
+		Term:  n.raft.currentTerm,
+	}
+	return n.Process(ctx, msg)
+}
 
 func (n *RaftNode) SendChan() chan []*pb.RaftMessage {
 	return n.sendc

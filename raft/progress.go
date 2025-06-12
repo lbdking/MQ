@@ -1,6 +1,8 @@
 package raft
 
-import "MQ/pb"
+import (
+	"MQ/pb"
+)
 
 type ReplicaProgress struct {
 	MatchIndex         uint64            // 已接收日志
@@ -30,5 +32,42 @@ func (rp *ReplicaProgress) AppendEntry(lastIndex uint64) {
 	rp.pending = append(rp.pending, lastIndex)
 	if rp.prevResp {
 		rp.NextIndex = lastIndex + 1
+	}
+}
+
+// AppendEntryResp
+func (rp *ReplicaProgress) AppendEntryResp(lastIndex uint64) {
+	if rp.MatchIndex < lastIndex {
+		rp.MatchIndex = lastIndex
+	}
+	idx := -1
+	for i, v := range rp.pending {
+		if v == lastIndex {
+			idx = i
+		}
+	}
+	if !rp.prevResp {
+		rp.prevResp = true
+		rp.NextIndex = lastIndex + 1
+	}
+	if idx > -1 {
+		rp.pending = rp.pending[idx+1:]
+	}
+}
+
+// ResetLogIndex
+func (rp *ReplicaProgress) ResetLogIndex(lastLogIndex uint64, leaderLastLogIndex uint64) {
+	//节点最后的日志索引小于leader最新日志按节点更新进度，否则按leader更新进度
+	if lastLogIndex < leaderLastLogIndex {
+		rp.NextIndex = lastLogIndex + 1
+		rp.MatchIndex = lastLogIndex
+	} else {
+		rp.NextIndex = leaderLastLogIndex + 1
+		rp.MatchIndex = leaderLastLogIndex
+	}
+
+	if rp.prevResp {
+		rp.prevResp = false
+		rp.pending = nil
 	}
 }
