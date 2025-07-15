@@ -3,6 +3,7 @@ module MQ
 go 1.24
 
 require (
+	github.com/golang/snappy v1.0.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.72.2
 	google.golang.org/protobuf v1.36.6
