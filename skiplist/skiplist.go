@@ -63,5 +63,4 @@ func (s *SkipList) Get(key []byte) []byte {
 	} else {
 		return nil
 	}
-	return nil
 }
