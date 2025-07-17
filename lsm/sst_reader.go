@@ -228,3 +228,7 @@ func (r *SstReader) ReadIndex() ([]*Index, error) {
 	}
 	return ReadIndex(data), nil
 }
+func (r *SstReader) Close() {
+	r.reader.Reset(r.fd)
+	r.fd.Close()
+}

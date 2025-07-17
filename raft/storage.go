@@ -5,7 +5,11 @@ import (
 	"MQ/skiplist"
 	"MQ/wal"
 	"go.uber.org/zap"
+	"time"
 )
+
+const LOG_SNAPSHOT_SIZE = 32 * 1024 * 1024
+const WAL_FLUSH_INTERVAL = 10 * time.Second
 
 type Storage interface {
 	Append(entries []*pb.LogEntry)
@@ -27,8 +31,22 @@ type RaftStorage struct {
 	logger              *zap.SugaredLogger
 }
 
-//func (rs *RaftStorage) Append(entries []*pb.LogEntry) {
-//	for _, entry := range entries {
-//		logKey, logValue := rs.encoding.EncodeLogEntry(entry)
+//	func (rs *RaftStorage) Append(entries []*pb.LogEntry) {
+//		for _, entry := range entries {
+//			logKey, logValue := rs.encoding.EncodeLogEntry(entry)
+//		}
 //	}
-//}
+func (rs *RaftStorage) checkFlush() {
+	go func() {
+		ticker := time.NewTicker(WAL_FLUSH_INTERVAL)
+		for {
+			select {
+			case <-ticker.C:
+				rs.walw.Flush()
+			case <-rs.stopc:
+				rs.walw.Flush()
+				return
+			}
+		}
+	}()
+}

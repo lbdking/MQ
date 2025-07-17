@@ -4,8 +4,11 @@ import (
 	"MQ/utils"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"go.uber.org/zap"
 	"os"
+	"path"
+	"strconv"
 	"sync"
 )
 
@@ -81,4 +84,40 @@ func (w *WalWriter) WriteBlock(blockType uint8, length uint16) {
 	binary.LittleEndian.PutUint32(data[:4], crc)
 	w.fd.Write(data)
 	w.buf.Truncate(7)
+}
+func (w *WalWriter) Flush() {
+	if w.buf.Len() > 7 {
+		w.mu.Lock()
+		w.PaddingBlock(walBlockSize-w.buf.Len(), true)
+		w.mu.Unlock()
+	}
+}
+
+func (w *WalWriter) PaddingFile() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	info, _ := w.fd.Stat()
+	n := info.Size() % walBlockSize
+	if n > 0 {
+		if _, err := w.fd.Write(make([]byte, walBlockSize-n)); err != nil {
+			w.logger.Warnf("填充未完成写入文件快失败 %d", err)
+		}
+	}
+}
+func NewWalWriter(dir string, seqNo int, logger *zap.SugaredLogger) (*WalWriter, error) {
+	walFile := path.Join(dir, strconv.Itoa(seqNo)+".wal")
+	fd, err := os.OpenFile(walFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("打开 %s.wal 失败", walFile)
+	}
+	w := &WalWriter{
+		dir:    dir,
+		seqNo:  seqNo,
+		fd:     fd,
+		buf:    bytes.NewBuffer(make([]byte, 7)),
+		logger: logger,
+	}
+	w.PaddingFile()
+	return w, nil
 }

@@ -132,3 +132,13 @@ func (i *SkipListIter) Next() bool {
 func NewSkipListIter(sl *SkipList) *SkipListIter {
 	return &SkipListIter{sl: sl}
 }
+func NewSkipList() *SkipList {
+	s := &SkipList{
+		rand:      rand.New(rand.NewSource(0xdeadbeef)),
+		maxHeight: 1,
+		kvData:    make([]byte, 0),
+		kvNode:    make([]int, 4+tMaxHeight),
+	}
+	s.kvNode[nHeight] = tMaxHeight
+	return s
+}
