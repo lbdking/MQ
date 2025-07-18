@@ -69,7 +69,7 @@ func (t *Tree) FlushRecord(sl *skiplist.SkipList, extra string) error {
 	seqNo := t.NextSeqNo(level)
 
 	file := formatName(level, seqNo, extra)
-	w,err := 
+	w,err :=
 }
 
 func formatName(level int, seqNo int, extra string) interface{} {
